@@ -1,5 +1,7 @@
 """Training loop."""
 
+import sys
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, WeightedRandomSampler, random_split
@@ -30,28 +32,42 @@ def train(
             device = "cpu"
 
     print(f"Training on {device}")
-    pin_memory = device == "cuda"  # MPS and CPU don't support pin_memory
+    pin_memory = device == "cuda"
 
-    import numpy as np
+    # Use multiple DataLoader workers on Linux/CUDA; stay at 0 on macOS
+    # (macOS multiprocessing with spawn causes DataLoader hangs)
+    if device == "cuda":
+        num_workers = min(8, (torch.get_num_threads() or 4))
+        effective_batch = 1024  # 4090 can handle large batches
+    else:
+        num_workers = 0
+        effective_batch = batch_size
+
     dataset = SudokuStepDataset(boards, rows, cols, digits)
     val_size = max(1, int(len(dataset) * val_split))
     train_size = len(dataset) - val_size
     train_ds, val_ds = random_split(dataset, [train_size, val_size])
 
-    # Oversample rare strategies so the model sees them proportionally
+    # Vectorised weight computation (avoid slow Python loop over millions of items)
     train_strategies = strategies[:train_size]
     unique, counts = np.unique(train_strategies, return_counts=True)
     freq = dict(zip(unique, counts))
-    sample_weights = torch.tensor(
-        [1.0 / freq[train_strategies[i]] for i in range(train_size)],
-        dtype=torch.float,
-    )
+    weight_map = np.array([1.0 / freq[s] for s in unique])
+    strat_to_idx = {s: i for i, s in enumerate(unique)}
+    sample_weights = torch.from_numpy(
+        weight_map[[strat_to_idx[s] for s in train_strategies]]
+    ).float()
     sampler = WeightedRandomSampler(sample_weights, num_samples=train_size, replacement=True)
     if len(unique) > 1:
         print("Oversampling strategies: " + ", ".join(f"{s}={c}" for s, c in zip(unique, counts)))
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler, num_workers=0, pin_memory=pin_memory)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, num_workers=0)
+    loader_kwargs = dict(num_workers=num_workers, pin_memory=pin_memory)
+    if num_workers > 0:
+        loader_kwargs["prefetch_factor"] = 2
+        loader_kwargs["persistent_workers"] = True
+
+    train_loader = DataLoader(train_ds, batch_size=effective_batch, sampler=sampler, **loader_kwargs)
+    val_loader   = DataLoader(val_ds,   batch_size=effective_batch, **loader_kwargs)
 
     model = SudokuNet().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
