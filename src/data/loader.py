@@ -48,15 +48,25 @@ def load_kaggle_csv(
     dtype_overrides = {puzzle_col: str, solution_col: str}
     df = pd.read_csv(path, nrows=limit, dtype=dtype_overrides)
 
-    # Replace '.' with '0' for datasets that use dots for empty cells
-    df[puzzle_col] = df[puzzle_col].str.replace(".", "0", regex=False)
+    # Use vectorized string operations for speed
+    puzzles_str = df[puzzle_col].str.replace(".", "0", regex=False).values.astype(str)
+    solutions_str = df[solution_col].values.astype(str)
 
-    puzzles, solutions = [], []
-    for _, row in df.iterrows():
-        puzzles.append(np.array(list(row[puzzle_col]), dtype=np.int8).reshape(9, 9))
-        solutions.append(np.array(list(row[solution_col]), dtype=np.int8).reshape(9, 9))
+    # Convert lists of 81-char strings to (N, 9, 9) int8 arrays efficiently
+    # We join all strings and use frombuffer for maximum speed
+    print(f"Parsing {len(df)} puzzles...")
+    puzzles_flat = np.frombuffer(
+        "".join(puzzles_str).encode("ascii"), dtype=np.int8
+    ) - 48
+    puzzles = list(puzzles_flat.reshape(-1, 9, 9))
 
-    difficulties = np.array(df["difficulty"].values, dtype=np.float32) if has_difficulty else None
+    print(f"Parsing {len(df)} solutions...")
+    solutions_flat = np.frombuffer(
+        "".join(solutions_str).encode("ascii"), dtype=np.int8
+    ) - 48
+    solutions = list(solutions_flat.reshape(-1, 9, 9))
+
+    difficulties = df["difficulty"].values.astype(np.float32) if has_difficulty else None
     return puzzles, solutions, difficulties
 
 

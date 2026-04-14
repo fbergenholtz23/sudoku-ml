@@ -27,7 +27,8 @@ def _get_mrv_moves(
     typically 2-3 choices rather than scanning all 729 possible placements.
     Returns None if any empty cell has no candidates (contradiction).
     """
-    x = torch.from_numpy(board_to_input(board)).unsqueeze(0).to(device)
+    # Move the raw board directly to GPU/model for encoding
+    x = torch.from_numpy(board).long().unsqueeze(0).to(device)
     with torch.no_grad():
         logits = model(x).squeeze(0)  # (81, 9)
 

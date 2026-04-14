@@ -37,8 +37,9 @@ def train(
     # Use multiple DataLoader workers on Linux/CUDA; stay at 0 on macOS
     # (macOS multiprocessing with spawn causes DataLoader hangs)
     if device == "cuda":
-        num_workers = min(8, (torch.get_num_threads() or 4))
-        effective_batch = 1024  # 4090 can handle large batches
+        # 4090 is a beast; use more workers and a much larger batch
+        num_workers = 12
+        effective_batch = 8192
     else:
         num_workers = 0
         effective_batch = batch_size
@@ -52,14 +53,17 @@ def train(
     train_strategies = strategies[:train_size]
     unique, counts = np.unique(train_strategies, return_counts=True)
     freq = dict(zip(unique, counts))
+    
+    # Use NumPy mapping instead of a list comprehension for speed
     weight_map = np.array([1.0 / freq[s] for s in unique])
-    strat_to_idx = {s: i for i, s in enumerate(unique)}
-    sample_weights = torch.from_numpy(
-        weight_map[[strat_to_idx[s] for s in train_strategies]]
-    ).float()
+    strat_to_idx_map = {s: i for i, s in enumerate(unique)}
+    # Convert strategy names to indices first, then map to weights
+    strat_indices = np.vectorize(strat_to_idx_map.get)(train_strategies)
+    sample_weights = torch.from_numpy(weight_map[strat_indices]).float()
+    
     sampler = WeightedRandomSampler(sample_weights, num_samples=train_size, replacement=True)
     if len(unique) > 1:
-        print("Oversampling strategies: " + ", ".join(f"{s}={c}" for s, c in zip(unique, counts)))
+        print(f"Oversampling strategies (total={train_size}): " + ", ".join(f"{s}={c}" for s, c in zip(unique, counts)))
 
     loader_kwargs = dict(num_workers=num_workers, pin_memory=pin_memory)
     if num_workers > 0:
@@ -76,10 +80,13 @@ def train(
 
     best_val_loss = float("inf")
 
+    from tqdm import tqdm
+
     for epoch in range(1, epochs + 1):
         model.train()
         train_loss = 0.0
-        for x, y in train_loader:
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{epochs} [Train]", leave=False)
+        for x, y in pbar:
             x, y = x.to(device), y.to(device)
             logits = model(x).view(-1, 81 * 9)  # (batch, 729)
             loss = criterion(logits, y)
@@ -87,12 +94,14 @@ def train(
             loss.backward()
             optimizer.step()
             train_loss += loss.item() * len(x)
+            pbar.set_postfix(loss=f"{loss.item():.4f}")
 
         model.eval()
         val_loss = 0.0
         correct = 0
         with torch.no_grad():
-            for x, y in val_loader:
+            pbar = tqdm(val_loader, desc=f"Epoch {epoch}/{epochs} [Val]", leave=False)
+            for x, y in pbar:
                 x, y = x.to(device), y.to(device)
                 logits = model(x).view(-1, 81 * 9)
                 val_loss += criterion(logits, y).item() * len(x)
