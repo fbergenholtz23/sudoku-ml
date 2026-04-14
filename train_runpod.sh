@@ -6,6 +6,5 @@ python main.py \
     --puzzles data/raw/sudoku-3m.csv \
     --limit 1000000 \
     --epochs 40 \
-    --no-cache \
     --balance \
     2>&1 | tee training.log
