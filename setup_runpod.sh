@@ -4,7 +4,7 @@
 # Example: bash setup_runpod.sh username/sudoku-3m-puzzles
 set -e
 
-DATASET_SLUG="${1:-}"
+DATASET_SLUG="${1:-radcliffe/3-million-sudoku-puzzles-with-ratings}"
 
 echo "=== Installing dependencies ==="
 pip install -r requirements.txt

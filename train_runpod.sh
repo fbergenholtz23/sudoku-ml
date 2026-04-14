@@ -7,4 +7,5 @@ python main.py \
     --limit 1000000 \
     --epochs 40 \
     --no-cache \
-    --balance
+    --balance \
+    2>&1 | tee training.log
