@@ -76,6 +76,7 @@ def main():
     parser.add_argument("--no-cache", action="store_true", help="Ignore existing cache and regenerate")
     parser.add_argument("--balance", action="store_true", help="Classify puzzles by difficulty and sample equally from each strategy bucket")
     parser.add_argument("--solve-only", action="store_true", help="Load checkpoint and solve puzzle-file")
+    parser.add_argument("--generate-only", action="store_true", help="Generate and cache training steps, then exit without training")
     args = parser.parse_args()
 
     if args.solve_only:
@@ -122,6 +123,10 @@ def main():
     unique, counts = np.unique(strategies, return_counts=True)
     for name, count in sorted(zip(unique, counts), key=lambda x: -x[1]):
         print(f"  {name}: {count}")
+
+    if args.generate_only:
+        print("Steps cached. Copy to RunPod and run: bash train_runpod.sh")
+        return
 
     # --- Train ---
     train(boards, rows, cols, digits, strategies, epochs=args.epochs, checkpoint_path=args.checkpoint)
