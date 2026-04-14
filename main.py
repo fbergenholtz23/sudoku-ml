@@ -85,7 +85,15 @@ def main():
                  "cuda" if torch.cuda.is_available() else "cpu")
         board = load_puzzle_file(args.puzzle_file)
         print("Puzzle:\n", board)
-        model = load_model(args.checkpoint, device=device)
+        
+        # Determine architecture based on filename
+        if "model_v2" in args.checkpoint:
+            print("Loading Version 2 architecture (Large)...")
+            model = load_model(args.checkpoint, device=device, channels=128, num_res_blocks=12)
+        else:
+            print("Loading Version 1 architecture (Small)...")
+            model = load_model(args.checkpoint, device=device, channels=64, num_res_blocks=3)
+            
         model.to(device)
         solved = solve(model, board, device=device)
         print("Solved:\n", solved)

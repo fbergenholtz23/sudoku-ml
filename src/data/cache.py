@@ -1,13 +1,14 @@
 """Save and load generated training steps to/from disk."""
 
+import os
 from pathlib import Path
 import numpy as np
 
 
 def save_steps(steps: list, path: str | Path) -> None:
     """
-    Save steps to a compressed .npz file.
-    Steps are stored as parallel arrays for efficient I/O.
+    Save steps. For large datasets, we save boards as a separate .npy file
+    to allow memory-mapping during training, saving massive amounts of RAM.
     """
     n = len(steps)
     boards = np.empty((n, 9, 9), dtype=np.int8)
@@ -23,37 +24,46 @@ def save_steps(steps: list, path: str | Path) -> None:
         digits[i] = d
         strategies[i] = name
 
+    # Save metadata/labels in a compressed npz
+    p = Path(path)
     np.savez_compressed(
-        path,
-        boards=boards,
+        p.with_suffix(".npz"),
         rows=rows,
         cols=cols,
         digits=digits,
         strategies=strategies.astype(str),
     )
-    print(f"Saved {n} steps to {path}.npz")
+    
+    # Save boards in a raw npy file for memory-mapping
+    np.save(p.with_suffix(".boards.npy"), boards)
+    
+    print(f"Saved {n} steps to {p}.npz and {p}.boards.npy")
 
 
 def load_arrays(path: str | Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Load steps directly as numpy arrays — memory-efficient for large datasets.
-    Returns (boards, rows, cols, digits, strategies) where:
-      boards:     (N, 9, 9) int8
-      rows:       (N,)      int8
-      cols:       (N,)      int8
-      digits:     (N,)      int8
-      strategies: (N,)      str
+    Load steps. Boards are memory-mapped to save RAM.
     """
     p = Path(path)
-    if not p.suffix:
-        p = p.with_suffix(".npz")
-    data = np.load(p, allow_pickle=False)
-    boards = data["boards"]
+    npz_path = p.with_suffix(".npz")
+    npy_path = p.with_suffix(".boards.npy")
+    
+    # Load labels
+    data = np.load(npz_path, allow_pickle=False)
     rows = data["rows"]
     cols = data["cols"]
     digits = data["digits"]
     strategies = data["strategies"]
-    print(f"Loaded {len(rows)} steps from {p}")
+    
+    # Memory-map the boards (this doesn't load them into RAM yet)
+    if npy_path.exists():
+        boards = np.load(npy_path, mmap_mode="r")
+    else:
+        # Fallback for old cache format
+        print("Warning: old cache format detected, loading into RAM...")
+        boards = data["boards"]
+        
+    print(f"Loaded {len(rows)} steps from {p} (boards mmap-ed: {npy_path.exists()})")
     return boards, rows, cols, digits, strategies
 
 
@@ -68,4 +78,4 @@ def load_steps(path: str | Path) -> list:
 
 def cache_exists(path: str | Path) -> bool:
     p = Path(path)
-    return p.with_suffix(".npz").exists() if not p.suffix else p.exists()
+    return p.with_suffix(".npz").exists()

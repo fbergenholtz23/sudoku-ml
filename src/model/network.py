@@ -69,13 +69,21 @@ class SudokuNet(nn.Module):
             nn.ReLU(inplace=True),
         )
         self.res_blocks = nn.Sequential(*[ResBlock(channels) for _ in range(num_res_blocks)])
-        self.head = nn.Sequential(
-            nn.Conv2d(channels, 64, kernel_size=1),
-            nn.BatchNorm2d(64),
+        
+        # Version 1 (Small) used 32 channels and no BatchNorm in the head
+        # Version 2 (Large) uses 64 channels and BatchNorm
+        head_channels = 64 if channels > 64 else 32
+        use_bn = channels > 64
+        
+        layers = [nn.Conv2d(channels, head_channels, kernel_size=1)]
+        if use_bn:
+            layers.append(nn.BatchNorm2d(head_channels))
+        layers.extend([
             nn.ReLU(inplace=True),
             nn.Flatten(),
-            nn.Linear(64 * 9 * 9, 81 * 9),
-        )
+            nn.Linear(head_channels * 9 * 9, 81 * 9),
+        ])
+        self.head = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if x.ndim == 3:  # (batch, 9, 9) raw boards

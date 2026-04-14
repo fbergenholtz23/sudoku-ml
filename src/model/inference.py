@@ -9,9 +9,9 @@ from src.strategies.candidates import get_candidates
 from src.strategies.backtrack import backtrack
 
 
-def load_model(checkpoint_path: str, device: str = "cpu") -> SudokuNet:
-    model = SudokuNet()
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+def load_model(checkpoint_path: str, device: str = "cpu", channels: int = 128, num_res_blocks: int = 12) -> SudokuNet:
+    model = SudokuNet(channels=channels, num_res_blocks=num_res_blocks)
+    model.load_state_dict(torch.load(checkpoint_path, map_location=device, weights_only=True))
     model.eval()
     return model
 

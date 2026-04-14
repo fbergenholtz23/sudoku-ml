@@ -37,9 +37,9 @@ def train(
     # Use multiple DataLoader workers on Linux/CUDA; stay at 0 on macOS
     # (macOS multiprocessing with spawn causes DataLoader hangs)
     if device == "cuda":
-        # 4090 is a beast; use more workers and a much larger batch
-        num_workers = 12
-        effective_batch = 8192
+        # V2 model is much larger; reduce batch size to fit in VRAM (24GB on 4090)
+        num_workers = 8
+        effective_batch = 2048
     else:
         num_workers = 0
         effective_batch = batch_size
@@ -49,17 +49,18 @@ def train(
     train_size = len(dataset) - val_size
     train_ds, val_ds = random_split(dataset, [train_size, val_size])
 
-    # Vectorised weight computation (avoid slow Python loop over millions of items)
+    # Vectorised weight computation - use float32 to save memory over float64
     train_strategies = strategies[:train_size]
     unique, counts = np.unique(train_strategies, return_counts=True)
     freq = dict(zip(unique, counts))
     
-    # Use NumPy mapping instead of a list comprehension for speed
-    weight_map = np.array([1.0 / freq[s] for s in unique])
+    weight_map = np.array([1.0 / freq[s] for s in unique], dtype=np.float32)
     strat_to_idx_map = {s: i for i, s in enumerate(unique)}
-    # Convert strategy names to indices first, then map to weights
-    strat_indices = np.vectorize(strat_to_idx_map.get)(train_strategies)
-    sample_weights = torch.from_numpy(weight_map[strat_indices]).float()
+    
+    # Map strategies to indices and then to weights in one go to save a temporary array
+    sample_weights = torch.from_numpy(
+        weight_map[np.vectorize(strat_to_idx_map.get)(train_strategies)]
+    )
     
     sampler = WeightedRandomSampler(sample_weights, num_samples=train_size, replacement=True)
     if len(unique) > 1:
