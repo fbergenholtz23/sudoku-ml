@@ -7,9 +7,11 @@ set -e
 DATASET_SLUG="${1:-radcliffe/3-million-sudoku-puzzles-with-ratings}"
 
 echo "=== Installing dependencies ==="
+# Install PyTorch for CUDA 12.4 (matches RunPod driver) before other deps
+pip install torch --index-url https://download.pytorch.org/whl/cu124
 pip install -r requirements.txt
 pip install -e .
-pip install kaggle tqdm
+pip install kaggle
 
 echo "=== Setting up data directory ==="
 mkdir -p data/raw data/processed checkpoints

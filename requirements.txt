@@ -1,5 +1,5 @@
 numpy>=1.26
-torch>=2.2
 pandas>=2.2
 tqdm>=4.66
 pytest>=8.0
+# torch is installed separately in setup_runpod.sh to match the CUDA driver version
